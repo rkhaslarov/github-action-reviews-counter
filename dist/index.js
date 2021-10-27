@@ -12751,6 +12751,9 @@ const run = async () => {
             reviews(first: 100) {
               nodes {
                 authorAssociation
+                author {
+                  login
+                }
                 state
               }
             }
@@ -12762,13 +12765,43 @@ const run = async () => {
         debug(`Using query:\n${query}`);
         debug(`Variables: ${JSON.stringify(vars, undefined, 2)}`);
         const data = await client.graphql(query, vars);
-        const reviews = data.repository.pullRequest.reviews.nodes.filter(review => collaboratorAssociation.includes(review.authorAssociation));
-        debug(`${reviews.length} total valid reviews`);
+        const reviews = {};
+        data.repository.pullRequest.reviews.nodes.forEach(review => { reviews[review.author.login] = review.state; });
+        const reviewersQuery = `
+      query GetRequestedReviewers(${queryArgs}) {
+        repository(owner: $repoOwner, name: $repoName) {
+          pullRequest(number: $prNumber) {
+            reviewRequests(first: 100) {
+              nodes {
+                requestedReviewer {
+                  ... on User {
+                    login
+                  }
+                  ... on Team {
+                    name
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    `;
+        const reviewersData = await client.graphql(reviewersQuery, vars);
+        debug(`${Object.keys(reviews).length} total reviews`);
         Object.keys(ReviewState)
             .filter(key => /^[a-z_A-Z]+$/.test(key))
             .forEach(stateName => {
-            const stateReviewsCount = reviews.filter(review => review.state === stateName)
-                .length;
+            let stateReviewsCount = 0;
+            Object.keys(reviews).forEach(username => {
+                if (reviews[username] === stateName) {
+                    stateReviewsCount += 1;
+                }
+            });
+            if (stateName === 'PENDING') {
+                // add pending reviews from manual requested reviewers
+                stateReviewsCount += reviewersData.repository.pullRequest.reviewRequests.nodes.length;
+            }
             const outputKey = stateName.toLowerCase();
             debug(`  ${outputKey}: ${stateReviewsCount.toLocaleString('en')}`);
             core.setOutput(outputKey, stateReviewsCount);

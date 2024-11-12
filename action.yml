@@ -5,7 +5,7 @@ branding:
 description: 'Collaborator pull request review counter.'
 runs:
   main: 'dist/index.js'
-  using: 'node16'
+  using: 'node20'
 inputs:
   repo-token:
     description: 'GITHUB_TOKEN secret'
